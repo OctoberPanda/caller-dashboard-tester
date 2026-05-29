@@ -370,11 +370,12 @@ async function saveFlag(){
 }
 
 function rebuildNotes(orig,rLogs,dateStr){
-  const lines=orig.split('\n'),dateIdx=lines.findIndex(l=>l.includes(dateStr));
+  const lines=orig.split('\n'),dateIdx=lines.findIndex(l=>l.trim()===dateStr.trim());
   const preToday=dateIdx>-1?lines.slice(0,dateIdx).join('\n'):orig;
   const todayLines=rLogs.map(l=>l.noteEntry).filter(Boolean);
+  // Only add date block if there are actual notes — no orphaned date stamps
   const todayBlock=todayLines.length?dateStr+'\n'+todayLines.join('\n'):'';
-  return[preToday,todayBlock].filter(Boolean).join('\n');
+  return[preToday,todayBlock].filter(Boolean).join('\n').trim();
 }
 
 // UNDO SYSTEM
@@ -417,7 +418,11 @@ async function undoLog(ri,role,id){
   b.d[rc.notes]=rebuildNotes(String(b.d[rc.notes]||''),remaining,workDateDisplay());
   b.d[rc.times]=String(Math.max(0,(parseInt(b.d[rc.times])||0)-1));
   if(remaining.length){const last=remaining[remaining.length-1];b.d[rc.outcome]=last.outcome;b.d[rc.who]=last.who;}
-  await writeSheet([{row:ri,col:rc.notes,value:b.d[rc.notes]},{row:ri,col:rc.times,value:b.d[rc.times]},{row:ri,col:rc.outcome,value:b.d[rc.outcome]||''},{row:ri,col:rc.who,value:b.d[rc.who]||''}]);
+  // If no logs remain for this role, clear outcome, who, and recent date
+  if(!remaining.length){
+    b.d[rc.outcome]='';b.d[rc.who]='';b.d[rc.recent]='';
+  }
+  await writeSheet([{row:ri,col:rc.notes,value:b.d[rc.notes]},{row:ri,col:rc.times,value:b.d[rc.times]},{row:ri,col:rc.outcome,value:b.d[rc.outcome]||''},{row:ri,col:rc.who,value:b.d[rc.who]||''},{row:ri,col:rc.recent,value:b.d[rc.recent]||''}]);
   renderStats();rebuildCard(ri,false);toast('Entry undone','success');
 }
 async function undoAllLogs(ri,role){
@@ -426,7 +431,8 @@ async function undoAllLogs(ri,role){
   const b=banks.find(x=>x.ri===ri),rc=RC[role];
   b.d[rc.notes]=rebuildNotes(String(b.d[rc.notes]||''),[],workDateDisplay());
   b.d[rc.times]=String(Math.max(0,(parseInt(b.d[rc.times])||0)-today.length));
-  await writeSheet([{row:ri,col:rc.notes,value:b.d[rc.notes]},{row:ri,col:rc.times,value:b.d[rc.times]}]);
+  b.d[rc.outcome]='';b.d[rc.who]='';b.d[rc.recent]='';
+  await writeSheet([{row:ri,col:rc.notes,value:b.d[rc.notes]},{row:ri,col:rc.times,value:b.d[rc.times]},{row:ri,col:rc.outcome,value:''},{row:ri,col:rc.who,value:''},{row:ri,col:rc.recent,value:''}]);
   renderStats();rebuildCard(ri,false);toast('All entries undone','success');
 }
 async function undoFlag(ri,role,phone){
