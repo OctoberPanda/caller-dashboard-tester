@@ -61,12 +61,10 @@ function onDateChange(){
 function initWorkDate(){
   const now=new Date();
   const et=new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));
-  return `${et.getFullYear()}-${String(et.getMonth()+1).padStart(2,'0')}-${String(et.getDate()).padStart(2,'0')}`;
+  return `${et.getMonth()+1}/${et.getDate()}/${et.getFullYear()}`;
 }
 function workDateDisplay(){
-  if(!workDate)return'';
-  const [y,m,d]=workDate.split('-');
-  return `${parseInt(m)}/${parseInt(d)}/${y}`;
+  return workDate||'';
 }
 
 async function loadSheet(){
