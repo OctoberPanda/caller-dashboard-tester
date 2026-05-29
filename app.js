@@ -1,6 +1,6 @@
 // CALLER DASHBOARD TESTER v2 - Date-based persistence
 
-const SCRIPT_URL='https://script.google.com/macros/s/AKfycbzy5WXEYHsLP7RvNiSA_16bBCEr7WtyiNvD4Iu8PbdtUNFoQtUAmOD-A1jxkY4h1ymd/exec';
+const SCRIPT_URL='https://script.google.com/macros/s/AKfycbwTu3t1ybgchssRWD2HnVRaT8uEifcjMbl0xCYRMaf2ROGe-3P20zV3g_WohE__1oAq/exec';
 const CFG_KEY='cdt2_config';
 const LOGS_KEY='cdt2_logs';
 const FLAGS_KEY='cdt2_flags';
@@ -319,7 +319,15 @@ async function saveLog(){
       d[orc.notes]=on?on+'\n'+dn:dn;
     });
   }
-  const logEntry={id:genId(),ri,role,who,outcome,noteEntry,noteText:parts.join(' · ')||'',spokeTo,newNum,date:workDate,forTressika:false,deleted:false};
+  // Save snapshot of fields BEFORE this log so undo can restore them
+  const before={
+    recent: d[rc.recent]||'',
+    times:  String((parseInt(d[rc.times])||0)),  // before increment
+    outcome:d[rc.outcome]||'',
+    who:    d[rc.who]||'',
+    notes:  String(d[rc.notes]||'').split('\n').filter(l=>l.trim()!==noteEntry).join('\n'),
+  };
+  const logEntry={id:genId(),ri,role,who,outcome,noteEntry,noteText:parts.join(' · ')||'',spokeTo,newNum,date:workDate,forTressika:false,deleted:false,before};
   const key=logKey(ri);if(!logs[key])logs[key]=[];logs[key].push(logEntry);saveLogs();
   const updates=[{row:ri,col:rc.recent,value:d[rc.recent]},{row:ri,col:rc.times,value:d[rc.times]},{row:ri,col:rc.who,value:d[rc.who]},{row:ri,col:rc.outcome,value:d[rc.outcome]},{row:ri,col:rc.notes,value:d[rc.notes]}];
   if(newNum)updates.push({row:ri,col:rc.phone,value:d[rc.phone]});
@@ -418,11 +426,28 @@ async function undoLog(ri,role,id){
   b.d[rc.notes]=rebuildNotes(String(b.d[rc.notes]||''),remaining,workDateDisplay());
   b.d[rc.times]=String(Math.max(0,(parseInt(b.d[rc.times])||0)-1));
   if(remaining.length){const last=remaining[remaining.length-1];b.d[rc.outcome]=last.outcome;b.d[rc.who]=last.who;}
-  // If no logs remain for this role, clear outcome, who, and recent date
-  if(!remaining.length){
-    b.d[rc.outcome]='';b.d[rc.who]='';b.d[rc.recent]='';
+  // Restore from before snapshot if available, otherwise use previous remaining log
+  if(log.before&&!remaining.length){
+    b.d[rc.recent] =log.before.recent;
+    b.d[rc.times]  =log.before.times;
+    b.d[rc.outcome]=log.before.outcome;
+    b.d[rc.who]    =log.before.who;
+    b.d[rc.notes]  =log.before.notes;
+  } else if(remaining.length){
+    const last=remaining[remaining.length-1];
+    b.d[rc.outcome]=last.outcome;
+    b.d[rc.who]    =last.who;
+    b.d[rc.recent] =workDateDisplay();
+    b.d[rc.notes]  =rebuildNotes(String(b.d[rc.notes]||''),remaining,workDateDisplay());
+    b.d[rc.times]  =String(Math.max(0,(parseInt(b.d[rc.times])||0)));
   }
-  await writeSheet([{row:ri,col:rc.notes,value:b.d[rc.notes]},{row:ri,col:rc.times,value:b.d[rc.times]},{row:ri,col:rc.outcome,value:b.d[rc.outcome]||''},{row:ri,col:rc.who,value:b.d[rc.who]||''},{row:ri,col:rc.recent,value:b.d[rc.recent]||''}]);
+  await writeSheet([
+    {row:ri,col:rc.notes,  value:b.d[rc.notes]},
+    {row:ri,col:rc.times,  value:b.d[rc.times]},
+    {row:ri,col:rc.outcome,value:b.d[rc.outcome]},
+    {row:ri,col:rc.who,    value:b.d[rc.who]},
+    {row:ri,col:rc.recent, value:b.d[rc.recent]},
+  ]);
   renderStats();rebuildCard(ri,false);toast('Entry undone','success');
 }
 async function undoAllLogs(ri,role){
@@ -431,8 +456,22 @@ async function undoAllLogs(ri,role){
   const b=banks.find(x=>x.ri===ri),rc=RC[role];
   b.d[rc.notes]=rebuildNotes(String(b.d[rc.notes]||''),[],workDateDisplay());
   b.d[rc.times]=String(Math.max(0,(parseInt(b.d[rc.times])||0)-today.length));
-  b.d[rc.outcome]='';b.d[rc.who]='';b.d[rc.recent]='';
-  await writeSheet([{row:ri,col:rc.notes,value:b.d[rc.notes]},{row:ri,col:rc.times,value:b.d[rc.times]},{row:ri,col:rc.outcome,value:''},{row:ri,col:rc.who,value:''},{row:ri,col:rc.recent,value:''}]);
+  // Restore from the first log's before snapshot
+  const firstLog=today[0];
+  if(firstLog&&firstLog.before){
+    b.d[rc.recent] =firstLog.before.recent;
+    b.d[rc.times]  =firstLog.before.times;
+    b.d[rc.outcome]=firstLog.before.outcome;
+    b.d[rc.who]    =firstLog.before.who;
+    b.d[rc.notes]  =firstLog.before.notes;
+  }
+  await writeSheet([
+    {row:ri,col:rc.notes,  value:b.d[rc.notes]},
+    {row:ri,col:rc.times,  value:b.d[rc.times]},
+    {row:ri,col:rc.outcome,value:b.d[rc.outcome]},
+    {row:ri,col:rc.who,    value:b.d[rc.who]},
+    {row:ri,col:rc.recent, value:b.d[rc.recent]},
+  ]);
   renderStats();rebuildCard(ri,false);toast('All entries undone','success');
 }
 async function undoFlag(ri,role,phone){
