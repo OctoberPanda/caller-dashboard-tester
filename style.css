@@ -29,7 +29,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tester-badge{font-size:10px;background:var(--amber-bg);color:var(--amber);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:2px 7px}
 .date-selector-wrap{display:flex;align-items:center;gap:6px;background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius);padding:4px 10px}
 .date-label{font-size:11px;color:var(--text3);font-weight:500}
-#work-date{background:transparent;border:none;color:var(--text);font-size:13px;font-family:inherit;outline:none;padding:0;width:130px}
+#work-date{background:transparent;border:none;color:var(--text);font-size:13px;font-family:inherit;outline:none;padding:0;width:90px}
 .rep-badge{font-size:11px;background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius);padding:3px 9px;color:var(--text2)}
 .topbar-right{display:flex;align-items:center;gap:8px}
 .btn-sm{background:var(--surface2);color:var(--text2);border:0.5px solid var(--border);border-radius:var(--radius);padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit}
