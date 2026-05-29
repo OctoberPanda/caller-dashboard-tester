@@ -55,8 +55,18 @@ function boot(){
   loadSheet();
 }
 function onDateChange(){
-  workDate=gv('work-date');cfg.lastWorkDate=workDate;saveCfg();
-  renderStats();renderList(visibleBanks());
+  workDate=gv('work-date').trim();
+  if(!workDate)return;
+  cfg.lastWorkDate=workDate;saveCfg();
+  // Close any open card
+  if(openRI){
+    const pb=el('body-'+openRI),pc=el('chev-'+openRI);
+    if(pb){pb.classList.remove('open');pb.innerHTML='';}
+    if(pc)pc.classList.remove('open');
+    openRI=null;
+  }
+  renderStats();
+  applyFilters();
 }
 function initWorkDate(){
   const now=new Date();
