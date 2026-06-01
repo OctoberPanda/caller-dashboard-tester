@@ -27,27 +27,24 @@
 
 <!-- MAIN APP -->
 <div id="main-app" class="screen hidden">
-
-  <!-- TOP BAR -->
   <div class="topbar">
     <div class="topbar-left">
       <span class="app-name">📞 Caller Dashboard</span>
       <span class="tester-badge">TESTER</span>
-      <div class="date-selector-wrap">
-        <label class="date-label">Date</label>
-        <input type="text" id="work-date" placeholder="M/D/YYYY" onchange="onDateChange()" style="width:100px"/>
+      <div class="date-wrap">
+        <span class="date-label">Date</span>
+        <input type="text" id="work-date" placeholder="M/D/YYYY" onchange="onDateChange()"/>
       </div>
       <span class="rep-badge" id="rep-badge"></span>
     </div>
     <div class="topbar-right">
-      <button class="btn-sm" onclick="clearTodayLogs()">🗑 Clear day</button>
+      <button class="btn-sm" onclick="clearDayLogs()">🗑 Clear day</button>
       <button class="btn-sm" onclick="loadSheet()">↻ Refresh</button>
       <button class="btn-eod" onclick="showEOD()">End of day report</button>
       <button class="btn-icon" onclick="showSettings()">⚙️</button>
     </div>
   </div>
 
-  <!-- STATS BAR -->
   <div class="stats-bar">
     <div class="stat"><span class="stat-val" id="st-dials">0</span><span class="stat-lbl">Total dials</span></div>
     <div class="stat"><span class="stat-val green" id="st-reached">0</span><span class="stat-lbl">Banks reached</span></div>
@@ -58,7 +55,6 @@
     <div class="stat"><span class="stat-val" id="st-total">0</span><span class="stat-lbl">Active banks</span></div>
   </div>
 
-  <!-- FILTER BAR -->
   <div class="filter-bar">
     <input type="text" id="search" placeholder="🔍 Search bank..." oninput="applyFilters()"/>
     <select id="f-state" onchange="applyFilters()"><option value="">All states</option></select>
@@ -71,100 +67,80 @@
       <option value="sos">SOS flagged</option>
       <option value="interest">Expressed interest</option>
       <option value="declined-today">Declined today</option>
-      <option value="declined-all">All declined (inc. old)</option>
+      <option value="declined-all">All declined</option>
       <option value="attention">Needs attention</option>
     </select>
     <span class="filter-count" id="filter-count"></span>
   </div>
 
-  <!-- BANK LIST -->
   <div id="bank-list" class="bank-list"></div>
 </div>
 
-<!-- LOG MODAL -->
-<div id="log-modal" class="modal-overlay hidden">
+<!-- NUMBER MODAL (unified log + flag) -->
+<div id="num-modal" class="modal-overlay hidden">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <div><div class="modal-title" id="nm-title"></div><div class="modal-sub" id="nm-sub"></div></div>
+      <button class="modal-close" onclick="closeNumModal()">✕</button>
+    </div>
+    <div class="modal-body" id="nm-body"></div>
+  </div>
+</div>
+
+<!-- GENERAL LOG MODAL (no number) -->
+<div id="gen-modal" class="modal-overlay hidden">
   <div class="modal">
     <div class="modal-header">
-      <div><div class="modal-title" id="log-title"></div><div class="modal-sub" id="log-sub"></div></div>
-      <button class="modal-close" onclick="closeLogModal()">✕</button>
+      <div><div class="modal-title" id="gm-title"></div><div class="modal-sub" id="gm-sub"></div></div>
+      <button class="modal-close" onclick="closeGenModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group">
           <label>Who answered</label>
-          <select id="l-who">
-            <option value="NO CONTACT">No contact</option>
-            <option value="GK">GK — Gatekeeper</option>
-            <option value="EA">EA — Executive assistant</option>
+          <select id="gm-who">
+            <option value="NO CONTACT">NO CONTACT</option>
+            <option value="GK">GK</option>
+            <option value="EA">EA</option>
             <option value="CEO">CEO</option>
-            <option value="CRA">CRA Officer</option>
+            <option value="CRA">CRA</option>
             <option value="CFO">CFO</option>
-            <option value="Operator">Operator</option>
           </select>
         </div>
         <div class="form-group">
           <label>Outcome</label>
-          <select id="l-outcome" onchange="checkLogWarnings()">
-            <option value="No Answer">No Answer</option>
-            <option value="Left Message">Left Message</option>
-            <option value="Check Back Later">Check Back Later</option>
-            <option value="Expressed Interest">Expressed Interest</option>
-            <option value="Follow-up">Follow-up</option>
-            <option value="Email requested/ Follow-up">Email requested / Follow-up</option>
-            <option value="Decline">Decline</option>
-            <option value="Wrong Contact">Wrong Contact</option>
-            <option value="Wrong Number">Wrong Number</option>
-            <option value="Not the bank's fund type">Not the bank's fund type</option>
-            <option value="Open">Open</option>
-            <option value="Request To Unsubscribe">Request To Unsubscribe</option>
+          <select id="gm-outcome" onchange="checkGenWarnings()">
+            <option>No Answer</option>
+            <option>Left Message</option>
+            <option>Check Back Later</option>
+            <option>Expressed Interest</option>
+            <option>Follow-up</option>
+            <option>Email requested/ Follow-up</option>
+            <option>Decline</option>
+            <option>Wrong Contact</option>
+            <option>Wrong Number</option>
+            <option>Not the bank's fund type</option>
+            <option>Open</option>
+            <option>Request To Unsubscribe</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Spoke to (if new contact)</label>
-          <input type="text" id="l-spoke-to" placeholder="e.g. Chloe, receptionist"/>
+          <label>Spoke to</label>
+          <input type="text" id="gm-spoke" placeholder="Name, title"/>
         </div>
         <div class="form-group">
-          <label>New number captured</label>
-          <input type="text" id="l-new-number" placeholder="e.g. 330-674-0001"/>
+          <label>New number</label>
+          <input type="text" id="gm-newnum" placeholder="e.g. 806-771-3227"/>
         </div>
       </div>
       <div class="form-group">
         <label>Notes</label>
-        <textarea id="l-notes" rows="3" placeholder="What happened? Keep it brief and clear."></textarea>
+        <textarea id="gm-notes" rows="3" placeholder="What happened?"></textarea>
       </div>
-      <div id="decline-warn" class="warn-box hidden">Decline will stop ALL calling at this bank across all leads.</div>
+      <div id="gm-decline-warn" class="warn-box hidden">Decline will stop ALL calling at this bank.</div>
       <div class="modal-actions">
-        <button class="btn-primary" onclick="saveLog()">Save log</button>
-        <button class="btn-tressika hidden" id="btn-tressika" onclick="flagTressika()">Pass to Tressika</button>
-        <button class="btn-cancel" onclick="closeLogModal()">Cancel</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- FLAG MODAL -->
-<div id="flag-modal" class="modal-overlay hidden">
-  <div class="modal">
-    <div class="modal-header">
-      <div><div class="modal-title" id="flag-title"></div><div class="modal-sub" id="flag-sub"></div></div>
-      <button class="modal-close" onclick="closeFlagModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label>What is wrong with this number?</label>
-        <select id="f-issue">
-          <option value="Black box VM">Black box VM</option>
-          <option value="Dead air">Dead air</option>
-          <option value="Unidentifiable VM">Unidentifiable VM</option>
-          <option value="Wrong number">Wrong number</option>
-          <option value="Not in service">Not in service</option>
-          <option value="Fax machine">Fax machine</option>
-          <option value="Did not hear full name">Did not hear full name</option>
-        </select>
-      </div>
-      <div class="modal-actions">
-        <button class="btn-flag" onclick="saveFlag()">Confirm flag</button>
-        <button class="btn-cancel" onclick="closeFlagModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveGenLog()">Save log</button>
+        <button class="btn-cancel" onclick="closeGenModal()">Cancel</button>
       </div>
     </div>
   </div>
@@ -179,9 +155,9 @@
     </div>
     <div class="modal-body">
       <p id="undo-desc" style="font-size:13px;color:var(--text2);margin-bottom:1rem;line-height:1.5"></p>
-      <div class="warn-box">This will remove the entry from the app and reverse the update in the sheet.</div>
+      <div class="warn-box">This will remove the entry and restore the sheet to its previous state.</div>
       <div class="modal-actions" style="margin-top:1rem">
-        <button class="btn-undo-confirm" onclick="confirmUndo()">Yes, undo this</button>
+        <button class="btn-undo-confirm" onclick="confirmUndo()">Yes, undo</button>
         <button class="btn-cancel" onclick="closeUndoModal()">Cancel</button>
       </div>
     </div>
@@ -201,7 +177,7 @@
     <div class="modal-body">
       <div class="form-group" style="margin-bottom:1rem">
         <label>Total dials from CloudTalk (overrides app count)</label>
-        <input type="number" id="eod-dials" placeholder="Enter CloudTalk number" style="max-width:260px"/>
+        <input type="number" id="eod-dials" style="max-width:260px"/>
       </div>
       <pre id="eod-text" class="report-preview"></pre>
     </div>
