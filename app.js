@@ -24,14 +24,15 @@ const RC={
   CFO:{recent:33,times:34,who:35,notes:36,outcome:37,phone:29,name:28,ea:null,email:30,emailR:31,init:32},
 };
 
-const FLAG_OPTIONS=['Black box VM','Dead air','Unidentifiable VM','Wrong number','Wrong contact','Wrong bank','Not in service','Fax machine','Did not hear full name','Call screened by AI','Invalid number','Call rejected'];
+const FLAG_OPTIONS=['Black box VM','Dead air','Unidentifiable VM','No answer — no VM or identifier','Wrong number','Wrong contact','Wrong bank','Not in service','Fax machine','Did not hear full name','Call screened by AI','Invalid number','Call rejected','No exec access'];
 
 const OC={'Expressed Interest':'green','Follow-up':'blue','Email requested/ Follow-up':'blue','Left Message':'blue','Check Back Later':'amber','Open':'amber','Decline':'red','Request To Unsubscribe':'red','Wrong Number':'red','Wrong Contact':'red',"Not the bank's fund type":'red'};
 
-let cfg={},banks=[],logs={},flags={},calls={},openRI=null,numCtx=null,genCtx=null,undoCtx=null,workDate='';
+let cfg={},banks=[],logs={},flags={},calls={},apptHeld={},openRI=null,numCtx=null,genCtx=null,undoCtx=null,workDate='';
+const APPT_KEY='cdt3_appt';
 
 window.onload=()=>{
-  cfg=loadCfg();logs=loadLogs();flags=loadFlags();calls=loadCalls();
+  cfg=loadCfg();logs=loadLogs();flags=loadFlags();calls=loadCalls();apptHeld=loadAppt();
   // Migrate old cdt2 logs if cdt3 is empty
   migrateLegacyLogs();
   workDate=cfg.lastWorkDate||initWorkDate();
@@ -59,6 +60,7 @@ async function loadSheet(){
     if(data.error){el('bank-list').innerHTML=`<div class="loading error">❌ ${data.error.message}<br><br>Check Sheet ID, tab name, and API key in ⚙️ Settings.</div>`;return;}
     banks=(data.values||[]).slice(2).map((row,i)=>({ri:i+3,d:row})).filter(b=>b.d[C.BANK]&&String(b.d[C.BANK]).trim());
     resolveLegacyLogs();
+    await detectSheetStrikethroughs();
     renderStats();buildStateFilter();renderList(visibleBanks());
   }catch(e){el('bank-list').innerHTML='<div class="loading error">❌ Network error. Check your connection.</div>';}
 }
@@ -147,6 +149,9 @@ function phoneDigits(ph){
 function isDeclinedToday(ri){return allLogsForDate().some(l=>l.ri===ri&&l.outcome==='Decline');}
 function isDeclinedSheet(ri){const b=banks.find(x=>x.ri===ri);if(!b)return false;return['CEO','CRA','CFO'].some(r=>b.d[RC[r].outcome]==='Decline');}
 function isDeclined(ri){return isDeclinedToday(ri)||isDeclinedSheet(ri);}
+function isApptHeld(ri){return apptHeld[bankId(ri)]===true;}
+function setApptHeld(ri){apptHeld[bankId(ri)]=true;localStorage.setItem(APPT_KEY,JSON.stringify(apptHeld));renderStats();if(openRI===ri)renderBody(ri);rebuildCard(ri,true);toast('Appointment marked as held — bank removed from call list','success');}
+function loadAppt(){try{return JSON.parse(localStorage.getItem(APPT_KEY))||{};}catch{return{};}}
 function bankCalledToday(ri){return allLogsForDate().some(l=>l.ri===ri&&l.called);}
 function bankComplete(ri){return['CEO','CRA','CFO'].every(r=>logsForDate(ri,r).some(l=>l.called));}
 function bankIncomplete(ri){const c=['CEO','CRA','CFO'].filter(r=>logsForDate(ri,r).some(l=>l.called)).length;return c>0&&c<3;}
@@ -178,21 +183,24 @@ function mostRecentEmail(d,role){
 function renderStats(){
   const all=allLogsForDate();
   const dials=all.filter(l=>l.called).length;
-  const banksReached=new Set(all.filter(l=>l.called&&l.outcome!=='No Answer').map(l=>l.ri)).size;
+  // Bank reached = called at least 1 number regardless of outcome or who answered
+  const banksReached=new Set(all.filter(l=>l.called).map(l=>l.ri)).size;
   const peopleReached=new Set(all.filter(l=>l.called&&l.who&&l.who!=='NO CONTACT').map(l=>l.ri+'_'+l.role)).size;
   const completeCnt=banks.filter(b=>bankComplete(b.ri)).length;
   const sosCnt=Object.values(flags).filter(f=>!f.undone).length;
   const decToday=new Set(all.filter(l=>l.outcome==='Decline').map(l=>l.ri)).size;
-  const activeCnt=banks.filter(b=>!isDeclined(b.ri)).length;
+  const apptToday=new Set(all.filter(l=>l.outcome==='Expressed Interest').map(l=>l.ri)).size;
+  const activeCnt=banks.filter(b=>!isDeclined(b.ri)&&!isApptHeld(b.ri)).length;
   st('st-dials',dials);st('st-reached',banksReached);st('st-people',peopleReached);
-  st('st-complete',completeCnt);st('st-sos',sosCnt);st('st-declined',decToday);st('st-total',activeCnt);
+  st('st-complete',completeCnt);st('st-sos',sosCnt);st('st-declined',decToday);
+  st('st-appt',apptToday);st('st-total',activeCnt);
 }
 
 function buildStateFilter(){
   const sel=el('f-state');const states=[...new Set(banks.map(b=>b.d[C.STATE]).filter(Boolean))].sort();
   sel.innerHTML='<option value="">All states</option>';states.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;sel.appendChild(o);});
 }
-function visibleBanks(){const status=gv('f-status');if(status==='declined-all')return banks.filter(b=>isDeclined(b.ri));return banks.filter(b=>!isDeclinedSheet(b.ri));}
+function visibleBanks(){const status=gv('f-status');if(status==='declined-all')return banks.filter(b=>isDeclined(b.ri));if(status==='appt-held')return banks.filter(b=>isApptHeld(b.ri));return banks.filter(b=>!isDeclinedSheet(b.ri)&&!isApptHeld(b.ri));}
 function applyFilters(){
   const search=gv('search').toLowerCase(),state=gv('f-state'),status=gv('f-status');
   const result=visibleBanks().filter(b=>{
@@ -299,12 +307,15 @@ function buildLeadCard(ri,d,role,bankDeclined){
   }
 
   let bottomAction='';
-  if(bankDeclined){
+  if(isApptHeld(ri)){
+    bottomAction='<div class="appt-held-note">Appointment held — bank complete</div>';
+  }else if(bankDeclined){
     bottomAction='<div class="declined-note">Bank declined — calling stopped</div>';
     if(isDeclinedToday(ri))bottomAction+='<button class="btn-undo-decline" onclick="openUndoDecline('+ri+')">↩ Undo decline</button>';
   }else{
     bottomAction='<button class="btn-log-call" onclick="openNumModal('+ri+',\''+role+'\')">Log / Flag</button>'
       +'<button class="btn-log-general" onclick="openGenModal('+ri+',\''+role+'\')">+ Log without number</button>';
+    if(hasInt)bottomAction+='<button class="btn-appt-held" onclick="setApptHeld('+ri+')">✓ Appointment held</button>';
   }
 
   return '<div class="lead-card'+(hasSOS?' sos':'')+(hasInt?' interest':'')+(called?' complete-lead':'')+(bankDeclined?' declined-lead':'')+'"><div class="lead-header"><div class="lead-header-left"><div class="lead-role-row"><span class="role-tag">'+role+'</span>'+statusTag+(outcome?'<span class="outcome-chip '+oc+'">'+esc(outcome)+'</span>':'')+'</div><div class="lead-name">'+esc(name)+'</div>'+(ea?'<div class="lead-ea">EA: '+esc(ea)+'</div>':'')+'</div><div class="lead-header-right">'+(recent?'Last: '+recent+'<br>':'')+times+'x total</div></div><div class="lead-body">'+attn+phonesHtml+notesHtml+todayHtml+bottomAction+'</div></div>';
@@ -315,8 +326,11 @@ function openNumModal(ri,role){
   const b=banks.find(x=>x.ri===ri);if(!b)return;
   const d=b.d,rc=RC[role],phones=parsePhones(d[rc.phone]);
   numCtx={ri,role};
-  st('nm-title',d[C.BANK]+' — '+role+': '+esc(d[rc.name]||'—'));
-  st('nm-sub','Row '+ri+' · '+d[C.REG]||'' + (d[C.AA]?' · AA: '+d[C.AA]:'')+(d[rc.init]?' · Email sent: '+fmtSheetDate(d[rc.init]):''));
+  st('nm-title',d[C.BANK]+' — '+role+': '+(d[rc.name]||'—'));
+  const regStr=d[C.REG]?d[C.REG]:'';
+  const aaStr=d[C.AA]?' · AA: '+d[C.AA]:'';
+  const initStr=d[rc.init]?' · Email sent: '+fmtSheetDate(d[rc.init]):'';
+  st('nm-sub','Row '+ri+' · '+regStr+aaStr+initStr);
 
   // Build per-number sections
   let html='';
@@ -353,6 +367,27 @@ function openNumModal(ri,role){
       html+='</div>';
       html+='</div>';
     });
+  }
+
+  // Detect if any number is shared with other roles
+  const otherRoles=['CEO','CRA','CFO'].filter(r=>r!==role);
+  const sharedNums={};
+  phones.forEach(ph=>{
+    const digits=phoneDigits(ph);
+    otherRoles.forEach(r=>{
+      const otherPhones=parsePhones(d[RC[r].phone]);
+      if(otherPhones.some(op=>phoneDigits(op)===digits)){
+        if(!sharedNums[ph])sharedNums[ph]=[];
+        sharedNums[ph].push(r);
+      }
+    });
+  });
+  if(Object.keys(sharedNums).length){
+    html+='<div class="shared-num-notice"><strong>Shared numbers detected:</strong><br>';
+    Object.entries(sharedNums).forEach(([ph,roles])=>{
+      html+=esc(ph)+' is also listed for '+roles.join(', ')+'. Flagging here will flag all roles.<br>';
+    });
+    html+='</div>';
   }
 
   // Last 2 notes
@@ -392,7 +427,7 @@ async function saveNumModal(){
 
   let noteLines=[];
   let anyCall=false,anyFlag=false;
-  let lastWho='',lastOutcome='',lastSpoke='',lastNewNum='';
+  let lastWho='',lastOutcome='',lastSpoke='',lastNewNum='',lastNotesTxt='';
   let declineHappened=false;
 
   for(let pi=0;pi<phones.length;pi++){
@@ -408,7 +443,7 @@ async function saveNumModal(){
       const notesTxt=el('nm-notes-'+pi)?.value.trim()||'';
       const flagIssue=el('nm-flag-'+pi)?.value||'';
 
-      lastWho=who;lastOutcome=outcome;lastSpoke=spoke;lastNewNum=newNum;
+      lastWho=who;lastOutcome=outcome;lastSpoke=spoke;lastNewNum=newNum;lastNotesTxt=notesTxt;
       if(outcome==='Decline')declineHappened=true;
 
       // Build note line for this number
@@ -430,6 +465,17 @@ async function saveNumModal(){
         flags[getFlagKey(ri,role,ph)]={ri,role,phone:ph,issue:flagIssue,undone:false,called:true};
         await strikethrough(ri,rc.phone,ph);
         await writeContactUpdate(ri,role,ph,flagIssue,d,phones);
+        // Auto-flag same number on other roles if shared
+        const digits=phoneDigits(ph);
+        for(const otherRole of['CEO','CRA','CFO'].filter(r=>r!==role)){
+          const orc=RC[otherRole];
+          const otherPhones=parsePhones(d[orc.phone]);
+          const matchPh=otherPhones.find(op=>phoneDigits(op)===digits);
+          if(matchPh){
+            flags[getFlagKey(ri,otherRole,matchPh)]={ri,role:otherRole,phone:matchPh,issue:flagIssue,undone:false,called:false,sharedFrom:role};
+            await strikethrough(ri,orc.phone,matchPh);
+          }
+        }
       }
 
       if(newNum)d[rc.phone]=d[rc.phone]?d[rc.phone]+'; '+newNum:newNum;
@@ -466,7 +512,7 @@ async function saveNumModal(){
   }
 
   // Save log entry
-  const logEntry={id:genId(),ri,role,who:lastWho||'NO CONTACT',outcome:lastOutcome||'',noteEntry,noteText:noteLines.join(' '),called:anyCall,date:workDate,before,deleted:false};
+  const logEntry={id:genId(),ri,role,who:lastWho||'NO CONTACT',outcome:lastOutcome||'',noteEntry,noteText:noteLines.join(' '),notesTxt:lastNotesTxt||'',spokeTo:lastSpoke||'',newNum:lastNewNum||'',called:anyCall,date:workDate,before,deleted:false};
   const key=logKey(ri);if(!logs[key])logs[key]=[];logs[key].push(logEntry);
   saveLogs();saveFlags();saveCalls();
 
@@ -632,6 +678,58 @@ async function removeContactUpdate(ri,role,phone,bankData){
   }catch(e){console.error('Remove contact update error',e);}
 }
 
+async function detectSheetStrikethroughs(){
+  // Read rich text formatting from phone columns to detect crossed-out numbers
+  try{
+    const phoneCols=['J','T','AD']; // CEO=col10, CRA=col20, CFO=col30 (A=1)
+    const roleMap={'J':'CEO','T':'CRA','AD':'CFO'};
+    const phoneColIdx={'J':9,'T':19,'AD':29};
+    for(const col of phoneCols){
+      const range=encodeURIComponent("'"+cfg.tab+"'!"+col+"3:"+col+"1025");
+      const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}?ranges=${range}&fields=sheets.data.rowData.values.textFormatRuns,sheets.data.rowData.values.userEnteredValue&key=${cfg.apiKey}`;
+      const res=await fetch(url);
+      const data=await res.json();
+      if(data.error)continue;
+      const rows=data.sheets?.[0]?.data?.[0]?.rowData||[];
+      rows.forEach((row,idx)=>{
+        const ri=idx+3;
+        const b=banks.find(x=>x.ri===ri);
+        if(!b)return;
+        const role=roleMap[col];
+        const cell=row.values?.[0];
+        if(!cell)return;
+        const cellText=cell.userEnteredValue?.stringValue||'';
+        const runs=cell.textFormatRuns||[];
+        if(!runs.length)return;
+        // Find which portions are struck through
+        const phones=parsePhones(cellText);
+        phones.forEach(ph=>{
+          const phStart=cellText.indexOf(ph);
+          if(phStart===-1)return;
+          // Check if any run covering this position has strikethrough
+          let isStruck=false;
+          for(let r=0;r<runs.length;r++){
+            const runStart=runs[r].startIndex||0;
+            const runEnd=r+1<runs.length?(runs[r+1].startIndex||cellText.length):cellText.length;
+            if(runStart<=phStart&&phStart<runEnd&&runs[r].format?.strikethrough){
+              isStruck=true;break;
+            }
+          }
+          const fKey=getFlagKey(ri,role,ph);
+          if(isStruck&&!flags[fKey]){
+            // Auto-flag from sheet strikethrough
+            flags[fKey]={ri,role,phone:ph,issue:'Flagged in sheet',undone:false,fromSheet:true};
+          } else if(!isStruck&&flags[fKey]?.fromSheet){
+            // Number was un-struck in sheet — remove auto-flag
+            delete flags[fKey];
+          }
+        });
+      });
+    }
+    saveFlags();
+  }catch(e){console.error('Strikethrough detection error',e);}
+}
+
 async function writeSheet(updates){
   try{await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({sheetId:cfg.sheetId,tabName:cfg.tab,updates})});}
   catch(e){console.error('Write error',e);}
@@ -647,17 +745,28 @@ function showEOD(){
   const all=allLogsForDate();
   const calledLogs=all.filter(l=>l.called);
   const appDials=calledLogs.length;
-  const banksReached=new Set(calledLogs.filter(l=>l.outcome!=='No Answer').map(l=>l.ri)).size;
+  // Bank reached = called at least 1 number regardless of outcome
+  const banksReached=new Set(calledLogs.map(l=>l.ri)).size;
   const peopleReached=new Set(calledLogs.filter(l=>l.who&&l.who!=='NO CONTACT').map(l=>l.ri+'_'+l.role)).size;
 
   // Connects — banks where real person reached, priority: Expressed Interest > Left Message > Check Back Later > No Answer
   const PRIORITY=['Expressed Interest','Email requested/ Follow-up','Follow-up','Left Message','Check Back Later','No Answer'];
+  // Connects = banks where someone actually answered (not NO CONTACT)
   const connectMap={};
   calledLogs.filter(l=>l.who&&l.who!=='NO CONTACT').forEach(l=>{
     const key=l.ri;
     if(!connectMap[key]||PRIORITY.indexOf(l.outcome)<PRIORITY.indexOf(connectMap[key].outcome)){
       const b=banks.find(x=>x.ri===l.ri);
-      if(b)connectMap[key]={row:l.ri,bank:b.d[C.BANK],outcome:l.outcome,note:l.noteText||l.outcome};
+      if(b){
+        // Build clean one-line note — only what was typed, no duplicates
+        const parts=[];
+        if(l.outcome==='Expressed Interest')parts.push('Appointment scheduled');
+        if(l.notesTxt&&l.notesTxt.trim())parts.push(l.notesTxt.trim().replace(/\.+$/,''));
+        if(l.spokeTo&&l.spokeTo.trim())parts.push('Spoke to '+l.spokeTo.trim().replace(/\.+$/,''));
+        if(l.newNum&&l.newNum.trim())parts.push('New number: '+l.newNum.trim());
+        const cleanNote=parts.length?parts.join('. '):l.outcome;
+        connectMap[key]={row:l.ri,bank:b.d[C.BANK],outcome:l.outcome,note:cleanNote};
+      }
     }
   });
   const connects=Object.values(connectMap);
@@ -696,8 +805,8 @@ function showEOD(){
     t+='Total Banks Reached | '+banksReached+'\n';
     t+='\nToday I reached '+peopleReached+' GK/EA/CRA/CFO/CEO\n\n';
     connects.forEach(c=>{
-      const isAppt=c.outcome==='Expressed Interest';
-      t+='Row '+c.row+' — '+c.bank+' — '+(isAppt?'Appointment scheduled. ':'')+c.note.replace(/\.$/, '')+'.\n';
+      const note=c.note.replace(/\.+$/,'').trim();
+      t+='Row '+c.row+' — '+c.bank+' — '+note+'.\n';
     });
     if(declinedToday.length){t+='\nBanks Declined Today\n\n';declinedToday.forEach(x=>{t+='Row '+x.row+' — '+x.bank+' — declined by '+x.role+'\n';});}
     if(Object.keys(sosByBank).length){

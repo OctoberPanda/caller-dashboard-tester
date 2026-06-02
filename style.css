@@ -218,3 +218,11 @@ select option{background:var(--surface2);color:var(--text)}
 .call-cnt{font-size:10px;background:var(--surface3);color:var(--text3);border-radius:4px;padding:1px 5px;margin-left:4px}
 .btn-log-general{width:100%;background:transparent;color:var(--text3);border:0.5px solid var(--border);border-radius:var(--radius);padding:4px;font-size:10px;cursor:pointer;font-family:inherit;margin-top:4px}
 .btn-log-general:hover{background:var(--surface2);color:var(--text2)}
+
+/* APPOINTMENT HELD */
+.btn-appt-held{width:100%;background:var(--green-bg);color:var(--green);border:0.5px solid var(--green-border);border-radius:var(--radius);padding:5px;font-size:11px;cursor:pointer;font-family:inherit;font-weight:600;margin-top:4px}
+.btn-appt-held:hover{opacity:.85}
+.appt-held-note{font-size:11px;color:var(--green);background:var(--green-bg);border:0.5px solid var(--green-border);border-radius:var(--radius);padding:5px 8px;text-align:center;margin-top:4px}
+
+/* SHARED NUMBER NOTICE */
+.shared-num-notice{background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius);padding:8px 10px;font-size:11px;color:var(--amber);margin-bottom:10px;line-height:1.6}
