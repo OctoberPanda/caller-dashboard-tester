@@ -29,6 +29,7 @@ const FLAG_OPTIONS=['Black box VM','Dead air','Unidentifiable VM','No answer —
 const OC={'Expressed Interest':'green','Follow-up':'blue','Email requested/ Follow-up':'blue','Left Message':'blue','Check Back Later':'amber','Open':'amber','Decline':'red','Request To Unsubscribe':'red','Wrong Number':'red','Wrong Contact':'red',"Not the bank's fund type":'red'};
 
 let cfg={},banks=[],logs={},flags={},calls={},apptHeld={},openRI=null,numCtx=null,genCtx=null,undoCtx=null,workDate='';
+let navList=[],navIdx=0;
 const APPT_KEY='cdt3_appt';
 
 // Keyboard navigation
@@ -230,10 +231,7 @@ function applyFilters(resetNav){
   });
   renderList(result);
 }
-// NAVIGATION STATE
-let navList=[];  // current filtered list of banks
-let navIdx=0;    // current position in navList
-
+// NAVIGATION
 function renderList(list){
   navList=list;
   // Clamp index
