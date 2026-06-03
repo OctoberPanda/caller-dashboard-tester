@@ -31,6 +31,14 @@ const OC={'Expressed Interest':'green','Follow-up':'blue','Email requested/ Foll
 let cfg={},banks=[],logs={},flags={},calls={},apptHeld={},openRI=null,numCtx=null,genCtx=null,undoCtx=null,workDate='';
 const APPT_KEY='cdt3_appt';
 
+// Keyboard navigation
+document.addEventListener('keydown',(e)=>{
+  const tag=document.activeElement?.tagName?.toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select')return;
+  if(e.key==='ArrowRight'||e.key==='ArrowDown')nextBank();
+  if(e.key==='ArrowLeft'||e.key==='ArrowUp')prevBank();
+});
+
 window.onload=()=>{
   cfg=loadCfg();logs=loadLogs();flags=loadFlags();calls=loadCalls();apptHeld=loadAppt();
   // Migrate old cdt2 logs if cdt3 is empty
@@ -47,7 +55,7 @@ function saveSetup(){
   cfg={name,sheetId,tab,updateSheetId,updateTab,apiKey,lastWorkDate:workDate};saveCfg();show('main-app');boot();
 }
 function boot(){st('rep-badge',cfg.name);if(!workDate)workDate=initWorkDate();el('work-date').value=workDate;loadSheet();}
-function onDateChange(){workDate=gv('work-date').trim();if(!workDate)return;cfg.lastWorkDate=workDate;saveCfg();if(openRI){const pb=el('body-'+openRI),pc=el('chev-'+openRI);if(pb){pb.classList.remove('open');pb.innerHTML='';}if(pc)pc.classList.remove('open');openRI=null;}renderStats();applyFilters();}
+function onDateChange(){workDate=gv('work-date').trim();if(!workDate)return;cfg.lastWorkDate=workDate;saveCfg();renderStats();applyFilters(false);}
 function initWorkDate(){const now=new Date();const et=new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}));return(et.getMonth()+1)+'/'+et.getDate()+'/'+et.getFullYear();}
 function workDateDisplay(){return workDate||'';}
 
@@ -61,7 +69,10 @@ async function loadSheet(){
     banks=(data.values||[]).slice(2).map((row,i)=>({ri:i+3,d:row})).filter(b=>b.d[C.BANK]&&String(b.d[C.BANK]).trim());
     resolveLegacyLogs();
     await detectSheetStrikethroughs();
-    renderStats();buildStateFilter();renderList(visibleBanks());
+    renderStats();
+    // Find smart start position
+    navIdx=findSmartStartIdx();
+    applyFilters(false);
   }catch(e){el('bank-list').innerHTML='<div class="loading error">❌ Network error. Check your connection.</div>';}
 }
 
@@ -201,12 +212,12 @@ function buildStateFilter(){
   sel.innerHTML='<option value="">All states</option>';states.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;sel.appendChild(o);});
 }
 function visibleBanks(){const status=gv('f-status');if(status==='declined-all')return banks.filter(b=>isDeclined(b.ri));if(status==='appt-held')return banks.filter(b=>isApptHeld(b.ri));return banks.filter(b=>!isDeclinedSheet(b.ri)&&!isApptHeld(b.ri));}
-function applyFilters(){
-  const search=gv('search').toLowerCase(),state=gv('f-state'),status=gv('f-status');
+function applyFilters(resetNav){
+  if(resetNav!==false)navIdx=0;  // reset position on manual filter change
+  const search=gv('search').toLowerCase(),status=gv('f-status');
   const result=visibleBanks().filter(b=>{
     const ri=b.ri,name=String(b.d[C.BANK]||'').toLowerCase();
     if(search&&!name.includes(search))return false;
-    if(state&&b.d[C.STATE]!==state)return false;
     if(status==='called-today')return bankCalledToday(ri);
     if(status==='not-called-today')return!bankCalledToday(ri)&&!isDeclined(ri);
     if(status==='incomplete')return bankIncomplete(ri);
@@ -219,11 +230,114 @@ function applyFilters(){
   });
   renderList(result);
 }
+// NAVIGATION STATE
+let navList=[];  // current filtered list of banks
+let navIdx=0;    // current position in navList
+
 function renderList(list){
-  const container=el('bank-list');const activeCount=banks.filter(b=>!isDeclinedSheet(b.ri)).length;
-  st('filter-count',list.length+' of '+activeCount+' active banks');
-  if(!list.length){container.innerHTML='<div class="loading">No banks match your filter.</div>';return;}
-  container.innerHTML='';list.forEach(b=>container.appendChild(buildCard(b)));
+  navList=list;
+  // Clamp index
+  if(navIdx>=navList.length)navIdx=Math.max(0,navList.length-1);
+  updateNavCounter();
+  showCurrentBank();
+}
+
+function findSmartStartIdx(){
+  // Find the most recent call date across all banks
+  const allDates=[];
+  banks.forEach(b=>{
+    ['CEO','CRA','CFO'].forEach(r=>{
+      const d=b.d[RC[r].recent];
+      if(d){
+        try{
+          const dt=new Date(d);
+          if(!isNaN(dt))allDates.push({dt,ri:b.ri});
+        }catch{}
+      }
+    });
+  });
+  if(!allDates.length)return 0;
+  // Get most recent date
+  const maxDt=new Date(Math.max(...allDates.map(x=>x.dt)));
+  // Find last bank in sheet order that has that date
+  let lastIdx=-1;
+  banks.forEach((b,idx)=>{
+    ['CEO','CRA','CFO'].forEach(r=>{
+      const d=b.d[RC[r].recent];
+      if(d){
+        try{
+          const dt=new Date(d);
+          if(Math.abs(dt-maxDt)<86400000){// same day
+            lastIdx=idx;
+          }
+        }catch{}
+      }
+    });
+  });
+  // Start at the bank AFTER the last called bank
+  if(lastIdx>=0&&lastIdx+1<banks.length)return lastIdx+1;
+  return 0;
+}
+
+function updateNavCounter(){
+  const total=navList.length;
+  st('nav-counter',total?'Bank '+(navIdx+1)+' of '+total:'No banks');
+  el('btn-prev').disabled=navIdx<=0;
+  el('btn-next').disabled=navIdx>=navList.length-1;
+}
+
+function prevBank(){
+  if(navIdx>0){navIdx--;updateNavCounter();showCurrentBank();}
+}
+function nextBank(){
+  if(navIdx<navList.length-1){navIdx++;updateNavCounter();showCurrentBank();}
+}
+
+function showCurrentBank(){
+  const container=el('bank-view');
+  if(!navList.length){container.innerHTML='<div class="loading">No banks match your filter.</div>';return;}
+  const b=navList[navIdx];
+  container.innerHTML='';
+  container.appendChild(buildBankView(b));
+  container.scrollTop=0;
+}
+
+function buildBankView(b){
+  const ri=b.ri,d=b.d;
+  const declined=isDeclined(ri),decToday=isDeclinedToday(ri);
+  const called=bankCalledToday(ri),complete=bankComplete(ri),incomplete=bankIncomplete(ri);
+  const hasSOS=Object.keys(flags).some(k=>k.startsWith(bankId(ri)+'__')&&!flags[k].undone);
+  const hasInt=logsForDate(ri).some(l=>l.outcome==='Expressed Interest')||['CEO','CRA','CFO'].some(r=>d[RC[r].outcome]==='Expressed Interest');
+  const pending=pendingRoles(ri);
+
+  let badges='';
+  if(decToday)badges+='<span class="badge badge-red">Declined today</span>';
+  else if(declined)badges+='<span class="badge badge-red">Declined</span>';
+  if(isApptHeld(ri))badges+='<span class="badge badge-green">Appt held</span>';
+  else if(complete)badges+='<span class="badge badge-amber">Complete</span>';
+  else if(incomplete)pending.forEach(r=>{badges+='<span class="badge badge-amber">'+r+' pending</span>';});
+  else if(called){badges+='<span class="badge badge-green">Called today</span>';pending.forEach(r=>{badges+='<span class="badge badge-amber">'+r+' pending</span>';});}
+  if(hasSOS)badges+='<span class="badge badge-red">SOS</span>';
+  if(hasInt&&!isApptHeld(ri))badges+='<span class="badge badge-green">Interest</span>';
+
+  const emails=['CEO','CRA','CFO'].map(r=>{const dt=mostRecentEmail(d,r);return dt?r+': '+fmtSheetDate(dt):'';}).filter(Boolean);
+  const emailRow=emails.length?'<div class="bank-email-row">📧 '+emails.join(' · ')+'</div>':'';
+
+  const div=document.createElement('div');
+  div.innerHTML=`
+    <div class="bank-header">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div>
+          <div class="bank-title">${esc(d[C.BANK])}</div>
+          <div class="bank-meta">Row ${ri} · ${[d[C.CITY],d[C.STATE]].filter(Boolean).join(', ')}${d[C.REG]?' · '+d[C.REG]:''}${d[C.AA]?' · AA: '+String(d[C.AA]).trim():''}</div>
+          ${emailRow}
+        </div>
+        <div class="bank-badges">${badges}</div>
+      </div>
+    </div>
+    <div class="leads-grid">${['CEO','CRA','CFO'].map(r=>buildLeadCard(ri,d,r,declined)).join('')}</div>
+  `;
+  return div;
 }
 
 function buildCard(b){
@@ -274,10 +388,16 @@ function buildLeadCard(ri,d,role,bankDeclined){
   const statusTag=called?'<span class="complete-tag">Called</span>':'<span class="pending-tag">Pending</span>';
 
   let attn='';
-  const noAns=rLogs.filter(l=>l.called&&l.outcome==='No Answer').length;
-  const conf=rLogs.filter(l=>l.called&&['Left Message','Follow-up','Email requested/ Follow-up','Check Back Later'].includes(l.outcome)).length;
-  if(noAns>=2)attn+='<div class="attention-flag">'+noAns+'x no answer — check at EOD</div>';
-  if(conf>=7)attn+='<div class="attention-flag">'+conf+'x confirmed attempts — check at EOD</div>';
+  // Per-number counters for attention flags
+  phones.forEach(ph=>{
+    const cnt=getCallCount(ri,role,ph);
+    // Check outcomes for this specific number
+    const phLogs=rLogs.filter(l=>l.called&&l.phone===ph);
+    const noAns=phLogs.filter(l=>l.outcome==='No Answer').length;
+    const conf=phLogs.filter(l=>['Left Message','Follow-up','Email requested/ Follow-up','Check Back Later'].includes(l.outcome)).length;
+    if(noAns>=2)attn+='<div class="attention-flag">'+esc(phoneBase(ph))+' — 2x no answer</div>';
+    if(conf>=7)attn+='<div class="attention-flag">'+esc(phoneBase(ph))+' — 7x attempted</div>';
+  });
 
   let phonesHtml='';
   if(phones.length){
@@ -427,7 +547,7 @@ async function saveNumModal(){
 
   let noteLines=[];
   let anyCall=false,anyFlag=false;
-  let lastWho='',lastOutcome='',lastSpoke='',lastNewNum='',lastNotesTxt='';
+  let lastWho='',lastOutcome='',lastSpoke='',lastNewNum='',lastNotesTxt='',lastPhone='';
   let declineHappened=false;
 
   for(let pi=0;pi<phones.length;pi++){
@@ -443,7 +563,7 @@ async function saveNumModal(){
       const notesTxt=el('nm-notes-'+pi)?.value.trim()||'';
       const flagIssue=el('nm-flag-'+pi)?.value||'';
 
-      lastWho=who;lastOutcome=outcome;lastSpoke=spoke;lastNewNum=newNum;lastNotesTxt=notesTxt;
+      lastWho=who;lastOutcome=outcome;lastSpoke=spoke;lastNewNum=newNum;lastNotesTxt=notesTxt;lastPhone=phones[pi]||'';
       if(outcome==='Decline')declineHappened=true;
 
       // Build note line for this number
@@ -451,7 +571,7 @@ async function saveNumModal(){
       if(notesTxt)parts.push(notesTxt);
       if(spoke)parts.push('Spoke to: '+spoke);
       if(newNum)parts.push('New number: '+newNum);
-      if(outcome==='Decline')parts.push('DECLINED — all calling stopped');
+      // Decline handled internally — nothing about it goes to notes
       if(flagIssue)parts.push(ph+' '+flagIssue);
       if(parts.length)noteLines.push(parts.join('. ')+'.');
 
@@ -512,7 +632,7 @@ async function saveNumModal(){
   }
 
   // Save log entry
-  const logEntry={id:genId(),ri,role,who:lastWho||'NO CONTACT',outcome:lastOutcome||'',noteEntry,noteText:noteLines.join(' '),notesTxt:lastNotesTxt||'',spokeTo:lastSpoke||'',newNum:lastNewNum||'',called:anyCall,date:workDate,before,deleted:false};
+  const logEntry={id:genId(),ri,role,who:lastWho||'NO CONTACT',outcome:lastOutcome||'',noteEntry,noteText:noteLines.join(' '),notesTxt:lastNotesTxt||'',spokeTo:lastSpoke||'',newNum:lastNewNum||'',phone:lastPhone||'',called:anyCall,date:workDate,before,deleted:false};
   const key=logKey(ri);if(!logs[key])logs[key]=[];logs[key].push(logEntry);
   saveLogs();saveFlags();saveCalls();
 
@@ -541,10 +661,21 @@ async function saveNumModal(){
 function openGenModal(ri,role){
   genCtx={ri,role};
   const b=banks.find(x=>x.ri===ri);if(!b)return;
-  st('gm-title',b.d[C.BANK]+' — '+role);
-  st('gm-sub','Row '+ri+' · Log without a specific number');
+  const rc=RC[role];
+  st('gm-title',b.d[C.BANK]+' — '+role+': '+(b.d[rc.name]||'—'));
+  st('gm-sub','Row '+ri+' · '+(b.d[C.REG]||'')+(b.d[C.AA]?' · AA: '+b.d[C.AA]:'')+(b.d[rc.init]?' · Email sent: '+fmtSheetDate(b.d[rc.init]):''));
   el('gm-who').value='NO CONTACT';el('gm-outcome').value='No Answer';
   sv('gm-spoke','');sv('gm-newnum','');sv('gm-notes','');
+  // Show last 2 notes for context
+  const existingNotes=String(b.d[rc.notes]||'');
+  const notesPreview=el('gm-notes-preview');
+  if(notesPreview&&existingNotes.trim()){
+    const lines=existingNotes.trim().split('\n').slice(-3);
+    notesPreview.textContent=lines.join('\n');
+    notesPreview.closest('.gm-notes-section').classList.remove('hidden');
+  }else if(notesPreview){
+    notesPreview.closest('.gm-notes-section').classList.add('hidden');
+  }
   el('gm-decline-warn').classList.add('hidden');
   el('gen-modal').classList.remove('hidden');
 }
@@ -561,7 +692,7 @@ async function saveGenLog(){
   const before={recent:d[rc.recent]||'',times:String(parseInt(d[rc.times])||0),outcome:d[rc.outcome]||'',who:d[rc.who]||'',notes:existingNotes};
   const parts=[];
   if(notesTxt)parts.push(notesTxt);if(spoke)parts.push('Spoke to: '+spoke);if(newNum)parts.push('New number: '+newNum);
-  if(outcome==='Decline')parts.push('DECLINED — all calling stopped');
+  // Decline handled internally — nothing about it goes to notes
   let noteEntry='';
   if(parts.length){noteEntry=dateInNotes?parts.join('. ')+'.':(dateStr+'\n'+parts.join('. ')+'.');}
   if(noteEntry)d[rc.notes]=existingNotes?existingNotes+'\n'+noteEntry:noteEntry;
@@ -780,9 +911,9 @@ function showEOD(){
   // Appointments
   const appointments=connects.filter(c=>c.outcome==='Expressed Interest');
 
-  // SOS grouped by bank
+  // SOS grouped by bank — only app-flagged numbers (not auto-detected from sheet)
   const sosByBank={};
-  Object.values(flags).filter(f=>!f.undone).forEach(f=>{
+  Object.values(flags).filter(f=>!f.undone&&!f.fromSheet).forEach(f=>{
     const b=banks.find(x=>x.ri===f.ri);if(!b)return;
     const key=f.ri+'|||'+b.d[C.BANK];if(!sosByBank[key])sosByBank[key]={row:f.ri,bank:b.d[C.BANK],entries:[]};
     sosByBank[key].entries.push(f);
@@ -857,11 +988,21 @@ function saveSettings(){
 }
 
 function rebuildCard(ri,removeFromList){
-  const b=banks.find(x=>x.ri===ri),old=el('card-'+ri);if(!old)return;
-  if(removeFromList&&!['declined-today','declined-all'].includes(gv('f-status'))){old.remove();return;}
-  const nc=buildCard(b);old.replaceWith(nc);
-  const nb=el('body-'+ri);
-  if(nb&&openRI===ri){nb.classList.add('open');el('chev-'+ri)?.classList.add('open');renderBody(ri);}
+  // Refresh current bank view if it's the current bank
+  if(navList.length&&navList[navIdx]&&navList[navIdx].ri===ri){
+    if(removeFromList){
+      // Remove from navList and adjust index
+      navList=navList.filter(b=>b.ri!==ri);
+      if(navIdx>=navList.length)navIdx=Math.max(0,navList.length-1);
+      updateNavCounter();
+    }
+    showCurrentBank();
+  } else if(removeFromList){
+    // Remove from navList
+    navList=navList.filter(b=>b.ri!==ri);
+    updateNavCounter();
+  }
+  renderStats();
 }
 
 function copyPhone(phone,btn){

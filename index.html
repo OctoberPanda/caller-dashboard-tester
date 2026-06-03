@@ -27,6 +27,8 @@
 
 <!-- MAIN APP -->
 <div id="main-app" class="screen hidden">
+
+  <!-- TOP BAR -->
   <div class="topbar">
     <div class="topbar-left">
       <span class="app-name">📞 Caller Dashboard</span>
@@ -45,40 +47,50 @@
     </div>
   </div>
 
+  <!-- STATS BAR -->
   <div class="stats-bar">
-    <div class="stat"><span class="stat-val" id="st-dials">0</span><span class="stat-lbl">Total dials</span></div>
+    <div class="stat"><span class="stat-val" id="st-dials">0</span><span class="stat-lbl">Dials</span></div>
     <div class="stat"><span class="stat-val green" id="st-reached">0</span><span class="stat-lbl">Banks reached</span></div>
     <div class="stat"><span class="stat-val blue" id="st-people">0</span><span class="stat-lbl">People reached</span></div>
     <div class="stat"><span class="stat-val amber" id="st-complete">0</span><span class="stat-lbl">Complete</span></div>
-    <div class="stat"><span class="stat-val red" id="st-sos">0</span><span class="stat-lbl">SOS flags</span></div>
-    <div class="stat"><span class="stat-val red" id="st-declined">0</span><span class="stat-lbl">Declined today</span></div>
     <div class="stat"><span class="stat-val green" id="st-appt">0</span><span class="stat-lbl">Appointments</span></div>
-    <div class="stat"><span class="stat-val" id="st-total">0</span><span class="stat-lbl">Active banks</span></div>
+    <div class="stat"><span class="stat-val red" id="st-sos">0</span><span class="stat-lbl">SOS</span></div>
+    <div class="stat"><span class="stat-val red" id="st-declined">0</span><span class="stat-lbl">Declined</span></div>
+    <div class="stat"><span class="stat-val" id="st-total">0</span><span class="stat-lbl">Active</span></div>
   </div>
 
-  <div class="filter-bar">
-    <input type="text" id="search" placeholder="🔍 Search bank..." oninput="applyFilters()"/>
-    <select id="f-state" onchange="applyFilters()"><option value="">All states</option></select>
-    <select id="f-status" onchange="applyFilters()">
-      <option value="">All active banks</option>
-      <option value="called-today">Called today</option>
-      <option value="not-called-today">Not called today</option>
-      <option value="incomplete">Incomplete</option>
-      <option value="complete">Complete</option>
-      <option value="sos">SOS flagged</option>
-      <option value="interest">Expressed interest</option>
-      <option value="declined-today">Declined today</option>
-      <option value="declined-all">All declined</option>
-      <option value="appt-held">Appointment held</option>
-      <option value="attention">Needs attention</option>
-    </select>
-    <span class="filter-count" id="filter-count"></span>
+  <!-- NAV BAR -->
+  <div class="nav-bar">
+    <button class="nav-btn" id="btn-prev" onclick="prevBank()">← Prev</button>
+    <div class="nav-center">
+      <span class="nav-counter" id="nav-counter">Bank 1 of 137</span>
+      <div class="nav-filter-wrap">
+        <input type="text" id="search" placeholder="Search bank..." oninput="onSearch()"/>
+        <select id="f-status" onchange="onFilter()">
+          <option value="">All banks</option>
+          <option value="called-today">Called today</option>
+          <option value="not-called-today">Not called today</option>
+          <option value="incomplete">Incomplete</option>
+          <option value="complete">Complete</option>
+          <option value="sos">SOS flagged</option>
+          <option value="interest">Expressed interest</option>
+          <option value="declined-today">Declined today</option>
+          <option value="appt-held">Appointment held</option>
+          <option value="attention">Needs attention</option>
+        </select>
+      </div>
+    </div>
+    <button class="nav-btn" id="btn-next" onclick="nextBank()">Next →</button>
   </div>
 
-  <div id="bank-list" class="bank-list"></div>
+  <!-- BANK VIEW -->
+  <div id="bank-view" class="bank-view">
+    <div class="loading" id="loading-msg">Loading your sheet...</div>
+  </div>
+
 </div>
 
-<!-- NUMBER MODAL (unified log + flag) -->
+<!-- NUMBER MODAL -->
 <div id="num-modal" class="modal-overlay hidden">
   <div class="modal modal-wide">
     <div class="modal-header">
@@ -89,7 +101,7 @@
   </div>
 </div>
 
-<!-- GENERAL LOG MODAL (no number) -->
+<!-- GENERAL LOG MODAL -->
 <div id="gen-modal" class="modal-overlay hidden">
   <div class="modal">
     <div class="modal-header">
@@ -97,48 +109,35 @@
       <button class="modal-close" onclick="closeGenModal()">✕</button>
     </div>
     <div class="modal-body">
+      <div class="gm-notes-section hidden" style="margin-bottom:12px">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Recent notes</div>
+        <div id="gm-notes-preview" style="font-size:11px;color:var(--text2);white-space:pre-wrap;background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius);padding:6px 9px;max-height:54px;overflow-y:auto"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius);padding:7px 10px;margin-bottom:12px">
+        Use this when you reached a lead through a number not listed, or need to log a general note.
+      </div>
       <div class="form-grid">
-        <div class="form-group">
-          <label>Who answered</label>
+        <div class="form-group"><label>Who answered</label>
           <select id="gm-who">
             <option value="NO CONTACT">NO CONTACT</option>
-            <option value="GK">GK</option>
-            <option value="EA">EA</option>
-            <option value="CEO">CEO</option>
-            <option value="CRA">CRA</option>
-            <option value="CFO">CFO</option>
+            <option value="GK">GK</option><option value="EA">EA</option>
+            <option value="CEO">CEO</option><option value="CRA">CRA</option><option value="CFO">CFO</option>
           </select>
         </div>
-        <div class="form-group">
-          <label>Outcome</label>
+        <div class="form-group"><label>Outcome</label>
           <select id="gm-outcome" onchange="checkGenWarnings()">
-            <option>No Answer</option>
-            <option>Left Message</option>
-            <option>Check Back Later</option>
-            <option>Expressed Interest</option>
-            <option>Follow-up</option>
-            <option>Email requested/ Follow-up</option>
-            <option>Decline</option>
-            <option>Wrong Contact</option>
-            <option>Wrong Number</option>
-            <option>Not the bank's fund type</option>
-            <option>Open</option>
+            <option>No Answer</option><option>Left Message</option><option>Check Back Later</option>
+            <option>Expressed Interest</option><option>Follow-up</option>
+            <option>Email requested/ Follow-up</option><option>Decline</option>
+            <option>Wrong Contact</option><option>Wrong Number</option>
+            <option>Not the bank's fund type</option><option>Open</option>
             <option>Request To Unsubscribe</option>
           </select>
         </div>
-        <div class="form-group">
-          <label>Spoke to</label>
-          <input type="text" id="gm-spoke" placeholder="Name, title"/>
-        </div>
-        <div class="form-group">
-          <label>New number</label>
-          <input type="text" id="gm-newnum" placeholder="e.g. 806-771-3227"/>
-        </div>
+        <div class="form-group"><label>Spoke to</label><input type="text" id="gm-spoke" placeholder="Name, title"/></div>
+        <div class="form-group"><label>Add / update number</label><input type="text" id="gm-newnum" placeholder="XXX.XXX.XXXX"/></div>
       </div>
-      <div class="form-group">
-        <label>Notes</label>
-        <textarea id="gm-notes" rows="3" placeholder="What happened?"></textarea>
-      </div>
+      <div class="form-group"><label>Notes</label><textarea id="gm-notes" rows="3" placeholder="What happened?"></textarea></div>
       <div id="gm-decline-warn" class="warn-box hidden">Decline will stop ALL calling at this bank.</div>
       <div class="modal-actions">
         <button class="btn-primary" onclick="saveGenLog()">Save log</button>
